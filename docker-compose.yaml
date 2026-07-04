@@ -126,5 +126,12 @@ services:
     depends_on: [ "kafka" ]
     container_name: "kafka-operations"
 
+  #mock-service
+  http-mock:
+    <<: *python-service
+    ports: [ "8003:8003" ]
+    command: "tests.mock.http.server"
+    container_name: "http-mock"
+
 volumes:
   pgdata:
