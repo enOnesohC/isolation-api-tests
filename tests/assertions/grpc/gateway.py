@@ -105,7 +105,7 @@ def assert_get_account_details_response_user_with_active_debit_card_account(
             cards=[
                 Card(
                     id="11111111-aaaa-4bbb-8ccc-222222222222",
-                    pin="1234",
+                    pin="4321",
                     cvv="456",
                     type=CardType.CARD_TYPE_VIRTUAL,
                     status=CardStatus.CARD_STATUS_ACTIVE,
@@ -117,7 +117,7 @@ def assert_get_account_details_response_user_with_active_debit_card_account(
                 ),
                 Card(
                     id="33333333-dddd-4eee-8fff-444444444444",
-                    pin="9876",
+                    pin="4321",
                     cvv="789",
                     type=CardType.CARD_TYPE_PHYSICAL,
                     status=CardStatus.CARD_STATUS_ACTIVE,
