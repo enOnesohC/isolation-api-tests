@@ -1,51 +1,55 @@
 import uuid
 
 import allure
-import grpc
+from httpx import Response, QueryParams
 
-from contracts.services.operations.operations_service_pb2_grpc import OperationsServiceStub
-from contracts.services.operations.rpc_get_operation_pb2 import GetOperationRequest, GetOperationResponse
-from contracts.services.operations.rpc_get_operations_pb2 import GetOperationsRequest, GetOperationsResponse
-from tests.clients.grpc.client import GRPCTestClient, build_grpc_test_channel
+from tests.clients.http.client import HTTPTestClient, build_http_test_client
 from tests.config import test_settings
+from tests.schema.operations import (
+    GetOperationsQueryTestSchema,
+    GetOperationResponseTestSchema,
+    GetOperationsResponseTestSchema
+)
 from tests.tools.logger import get_test_logger
+from tests.tools.routes import APITestRoutes
 
 
-class OperationsGRPCTestClient(GRPCTestClient):
-    def __init__(self, channel: grpc.Channel):
-        super().__init__(channel)
-
-        self.stub = OperationsServiceStub(channel)
-
+class OperationsHTTPTestClient(HTTPTestClient):
     @allure.step("Get operation")
-    def get_operation_api(self, request: GetOperationRequest) -> GetOperationResponse:
-        return self.stub.GetOperation(request)
+    def get_operation_api(self, operation_id: uuid.UUID) -> Response:
+        return self.get(f'{APITestRoutes.OPERATIONS}/{operation_id}')
 
     @allure.step("Get operations")
-    def get_operations_api(self, request: GetOperationsRequest) -> GetOperationsResponse:
-        return self.stub.GetOperations(request)
+    def get_operations_api(self, query: GetOperationsQueryTestSchema) -> Response:
+        return self.get(
+            APITestRoutes.OPERATIONS,
+            params=QueryParams(**query.model_dump(by_alias=True, exclude_none=True))
+        )
 
-    def get_operation(self, operation_id: uuid.UUID) -> GetOperationResponse:
-        request = GetOperationRequest(id=str(operation_id))
-        return self.get_operation_api(request)
+    def get_operation(self, operation_id: uuid.UUID) -> GetOperationResponseTestSchema:
+        response = self.get_operation_api(operation_id)
+        response.raise_for_status()
+        return GetOperationResponseTestSchema.model_validate_json(response.text)
 
     def get_operations(
             self,
             user_id: uuid.UUID,
             card_id: uuid.UUID | None = None,
             account_id: uuid.UUID | None = None,
-    ) -> GetOperationsResponse:
-        request = GetOperationsRequest(
-            user_id=str(user_id),
-            card_id=str(card_id) if card_id else None,
-            account_id=str(account_id) if account_id else None,
+    ) -> GetOperationsResponseTestSchema:
+        query = GetOperationsQueryTestSchema(
+            user_id=user_id,
+            card_id=card_id,
+            account_id=account_id
         )
-        return self.get_operations_api(request)
+        response = self.get_operations_api(query)
+        response.raise_for_status()
+        return GetOperationsResponseTestSchema.model_validate_json(response.text)
 
 
-def build_operations_grpc_test_client() -> OperationsGRPCTestClient:
-    channel = build_grpc_test_channel(
-        logger=get_test_logger("OPERATIONS_GRPC_TEST_CLIENT"),
-        config=test_settings.operations_grpc_client
+def build_operations_http_test_client() -> OperationsHTTPTestClient:
+    client = build_http_test_client(
+        logger=get_test_logger("OPERATIONS_HTTP_TEST_CLIENT"),
+        config=test_settings.operations_http_client
     )
-    return OperationsGRPCTestClient(channel=channel)
+    return OperationsHTTPTestClient(client=client)
