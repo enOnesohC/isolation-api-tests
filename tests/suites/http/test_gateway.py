@@ -1,127 +1,66 @@
+import sys
+
 import allure
 import pytest
 
-# Доменные ассерты сценарного тестового слоя.
-# Эти функции инкапсулируют бизнес-проверки ответа gateway
-# и скрывают всю логику сравнения вложенных сущностей.
-from tests.assertions.http.gateway import (
-    assert_get_user_details_response_user_with_active_credit_card_account,
-    assert_get_account_details_response_user_with_active_debit_card_account
+from tests.assertions.http.operations import (
+    assert_get_operations_response_from_events,
+    assert_get_operations_response_from_models,
 )
-
-# HTTP API-клиент gateway-service тестового слоя.
-# Клиент:
-# - знает контракт gateway-service;
-# - принимает RequestContext;
-# - не содержит бизнес-логики и ассертов.
-from tests.clients.http.gateway.client import GatewayHTTPTestClient
-
-# RequestContext — формализованный способ управления внешним миром.
-# Через него тест задаёт сценарий, который будет прокинут в HTTP-заголовки.
-from tests.context.base import RequestContext
-from tests.context.scenario import Scenario
-
-# Семантические константы Allure.
-# Они позволяют явно указать:
-# - протокол (HTTP),
-# - сервис (gateway),
-# - бизнес-фичу и сценарий.
+from tests.clients.http.operations.client import OperationsHTTPTestClient
+from tests.clients.kafka.operations.producer import OperationsKafkaProducerTestClient
+from tests.clients.postgres.operations.repository import OperationsPostgresTestRepository
 from tests.tools.allure import AllureTag, AllureStory, AllureFeature
 
 
-# Pytest-маркеры уровня тестового набора.
-#
-# @pytest.mark.gateway — тесты gateway-service
-# @pytest.mark.regression — регрессионный набор
-#
-# Эти маркеры используются для фильтрации запусков
-# и CI/CD сценариев.
-@pytest.mark.gateway
+@pytest.mark.operations
 @pytest.mark.regression
-
-# Allure-теги верхнего уровня.
-#
-# Здесь мы фиксируем:
-# - что тест относится к HTTP-протоколу,
-# - что тестирует gateway-service.
-@allure.tag(AllureTag.HTTP, AllureTag.GATEWAY_SERVICE)
-
-# Allure feature — бизнес-область теста.
-# В отчёте Allure все тесты gateway будут сгруппированы вместе.
-@allure.feature(AllureFeature.GATEWAY_SERVICE)
-class TestGatewayHTTP:
-    """
-    Сценарные HTTP тесты gateway-service.
-
-    Этот тестовый класс:
-    - не подготавливает данные;
-    - не управляет моками напрямую;
-    - не содержит логики маршрутизации или агрегации.
-
-    Он описывает сценарии взаимодействия с gateway
-    в условиях полностью детерминированного внешнего мира.
-    """
-
-    @allure.story(AllureStory.GET_USER_DETAILS)
-    @allure.title("[HTTP] Get user details. User with active credit card account")
-    def test_get_user_details_user_with_active_credit_card_account(
-        self,
-        gateway_http_test_client: GatewayHTTPTestClient,
+@allure.feature(AllureFeature.OPERATIONS_SERVICE)
+class TestOperationsHTTP:
+    @allure.tag(AllureTag.HTTP, AllureTag.KAFKA, AllureTag.OPERATIONS_SERVICE)
+    @allure.story(AllureStory.OPERATION_EVENTS)
+    @allure.title("[HTTP][Kafka] Operation events. In progress purchase operation")
+    def test_operation_events_in_progress_purchase_operation(
+            self,
+            operations_http_test_client: OperationsHTTPTestClient,
+            operations_kafka_producer_test_client: OperationsKafkaProducerTestClient
     ):
-        """
-        Сценарий:
-        Пользователь с активным кредитным счётом
-        запрашивает агрегированные данные через gateway-service.
-
-        Управляющая переменная теста — сценарий.
-        Все данные внешнего мира выбираются через него.
-        """
-
-        # Выполняем HTTP-вызов gateway-service.
+        # В этом тесте мы проверяем полный event-driven флоу:
+        # 1. Публикуем событие операции в Kafka.
+        # 2. Ожидаем, что процессор асинхронно обработает событие.
+        # 3. Проверяем результат через синхронный HTTP API.
         #
-        # RequestContext явно задаёт сценарий:
-        # USER_WITH_ACTIVE_CREDIT_CARD_ACCOUNT.
-        #
-        # Gateway-service не интерпретирует сценарий как бизнес-логику,
-        # а просто прокидывает его в HTTP-интеграции,
-        # где сценарий используется мок-сервисами.
-        response = gateway_http_test_client.get_user_details(
-            RequestContext(
-                scenario=Scenario.USER_WITH_ACTIVE_CREDIT_CARD_ACCOUNT
-            )
-        )
+        # Такой тест валидирует интеграцию Kafka, процессинга,
+        # сохранения состояния и HTTP-контракта operations-service.
+        event = operations_kafka_producer_test_client.produce_in_progress_purchase_operation_event()
+        response = operations_http_test_client.get_operations(user_id=event.user_id)
 
-        # Проверка результата выполняется доменным ассертoм.
-        #
-        # Ассерт:
-        # - знает структуру ответа gateway;
-        # - проверяет пользователя и его счета;
-        # - использует фиксированный сценарный снапшот данных;
-        # - формирует читаемый Allure-отчёт.
-        #
-        # Тест не сравнивает JSON, не перебирает поля
-        # и не знает, откуда взялись ожидаемые данные.
-        assert_get_user_details_response_user_with_active_credit_card_account(
-            response
-        )
+        assert_get_operations_response_from_events(response, [event])
 
-    @allure.story(AllureStory.GET_ACCOUNT_DETAILS)
-    @allure.title("[HTTP] Get account details. User with active debit card account")
-    def test_get_account_details_user_with_active_debit_card_account(
-        self,
-        gateway_http_test_client: GatewayHTTPTestClient,
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="psycopg2 + Windows Unicode limitation"
+    )
+    @allure.tag(AllureTag.HTTP, AllureTag.POSTGRES, AllureTag.OPERATIONS_SERVICE)
+    @allure.story(AllureStory.OPERATION_FILTERS)
+    @allure.title("[HTTP][Postgres] Filter by card id. In progress purchase operation")
+    def test_filter_by_card_id_in_progress_purchase_operation(
+            self,
+            operations_http_test_client: OperationsHTTPTestClient,
+            operations_postgres_test_repository: OperationsPostgresTestRepository
     ):
-        """
-        Сценарий:
-        Пользователь с активным дебитным счётом
-        запрашивает агрегированные данные через gateway-service.
-        """
-        response = gateway_http_test_client.get_account_details(
-            RequestContext(
-                scenario=Scenario.USER_WITH_ACTIVE_DEBIT_CARD_ACCOUNT
-            )
+        # В этом тесте нас не интересует асинхронный флоу.
+        # Мы проверяем только корректность фильтрации HTTP API.
+        #
+        # Поэтому мы напрямую сидим контролируемое состояние в базу данных,
+        # что делает тест:
+        # - быстрее;
+        # - стабильнее;
+        # - проще для чтения и поддержки.
+        model = operations_postgres_test_repository.create_in_progress_purchase_operation()
+        response = operations_http_test_client.get_operations(
+            user_id=model.user_id,
+            card_id=model.card_id
         )
 
-        assert_get_account_details_response_user_with_active_debit_card_account(
-            response
-        )
+        assert_get_operations_response_from_models(response, [model])
