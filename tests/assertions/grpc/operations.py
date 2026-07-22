@@ -31,7 +31,7 @@ def assert_operation_from_event(
     assert_equal(actual.user_id, expected.user_id, "user_id")
     assert_equal(actual.card_id, expected.card_id, "card_id")
     assert_equal(actual.category, expected.category, "category")
-    assert_equal(actual.created_at, to_proto_test_date(expected.created_at), "created_at")
+    assert_equal(to_proto_test_date(actual.created_at), expected.created_at, "created_at")
     assert_equal(actual.account_id, expected.account_id, "account_id")
 
 
@@ -52,7 +52,7 @@ def assert_operation_from_model(
     assert_equal(actual.user_id, expected.user_id, "user_id")
     assert_equal(actual.card_id, expected.card_id, "card_id")
     assert_equal(actual.category, expected.category, "category")
-    assert_equal(actual.created_at, to_proto_test_date(expected.created_at), "created_at")
+    assert_equal(to_proto_test_date(actual.created_at), expected.created_at, "created_at")
     assert_equal(actual.account_id, expected.account_id, "account_id")
 
 
