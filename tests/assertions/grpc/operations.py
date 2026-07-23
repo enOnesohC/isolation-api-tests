@@ -28,11 +28,11 @@ def assert_operation_from_event(
     assert_equal(actual.type, expected_type_proto, "type")
     assert_equal(actual.status, expected_status_proto, "status")
     assert_equal(actual.amount, expected.amount, "amount")
-    assert_equal(actual.user_id, expected.user_id, "user_id")
-    assert_equal(actual.card_id, expected.card_id, "card_id")
+    assert_equal(actual.user_id, str(expected.user_id), "user_id")
+    assert_equal(actual.card_id, str(expected.card_id), "card_id")
     assert_equal(actual.category, expected.category, "category")
     assert_equal(actual.created_at, to_proto_test_datetime(expected.created_at), "created_at")
-    assert_equal(actual.account_id, expected.account_id, "account_id")
+    assert_equal(actual.account_id, str(expected.account_id), "account_id")
 
 
 @allure.step("Check operation from model")
